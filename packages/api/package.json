@@ -1,0 +1,25 @@
+{
+  "name": "@autographa/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@autographa/auth": "workspace:*",
+    "@autographa/env": "workspace:*",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@autographa/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

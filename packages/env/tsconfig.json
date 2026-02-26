@@ -1,0 +1,3 @@
+{
+  "extends": "@autographa/config/tsconfig.base.json"
+}
