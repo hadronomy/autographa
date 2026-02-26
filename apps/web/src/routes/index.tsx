@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { SignaturePad } from "@/components/signature-pad";
+import { SignaturePad } from "@/components/signature-pad/react";
 import { useTRPC } from "@/utils/trpc";
 
 export const Route = createFileRoute("/")({
