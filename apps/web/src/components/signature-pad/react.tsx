@@ -1,6 +1,4 @@
-import { toHtml } from "hast-util-to-html";
-import { h } from "hastscript";
-import { useCallback, useEffect, useRef, useState } from "react";
+import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -8,364 +6,91 @@ import { useSignatureMachine } from "./hooks";
 import type { Point, Stroke } from "./machine";
 import { SignatureRenderer } from "./renderer";
 import { PenStabilizer } from "./stabilizer";
+import { buildSignatureSvg } from "./svg";
+
+export type SignaturePadHandle = {
+  undo(): void;
+  redo(): void;
+  clear(): void;
+
+  getStrokes(): Stroke[];
+  canUndo(): boolean;
+  canRedo(): boolean;
+
+  /**
+   * Builds the SVG string using the shared builder.
+   * Pure: no download and does not call onChange.
+   */
+  getSVG(): string;
+
+  /**
+   * Triggers a download of the SVG. For backward compatibility with the prior
+   * in-component export behavior, this calls onChange(svg).
+   */
+  downloadSVG(options?: { filename?: string }): string;
+};
 
 interface SignaturePadProps {
   width?: number;
   height?: number;
+
+  /**
+   * Backward-compatible: called when an export/download happens.
+   * (Not called by getSVG()).
+   */
   onChange?: (svg: string) => void;
+
+  /**
+   * Fires when a pointer stroke is completed (after it is committed to strokes).
+   */
   onStrokeEnd?: (strokes: Stroke[]) => void;
+
+  /**
+   * External control callbacks.
+   */
+  onStrokesChange?: (strokes: Stroke[]) => void;
+  onCanUndoChange?: (canUndo: boolean) => void;
+  onCanRedoChange?: (canRedo: boolean) => void;
+
   className?: string;
   strokeColor?: string;
   strokeWidth?: number;
   stabilizationLevel?: number;
+
+  /**
+   * Whether to render the internal floating toolbar + export button.
+   * Defaults to true to avoid changing existing behavior.
+   */
+  showToolbar?: boolean;
 }
 
-export function SignaturePad({
-  width = 600,
-  height = 300,
-  onChange,
-  onStrokeEnd,
-  className = "",
-  strokeColor = "#1c140f", // Deep sepia ink default, fitting the Caligrapha theme
-  strokeWidth = 2.5,
-  stabilizationLevel = 100,
-}: SignaturePadProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rendererRef = useRef<SignatureRenderer | null>(null);
-  const stabilizerRef = useRef<PenStabilizer | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const pointerCapturedRef = useRef(false);
-  const [dimensions, setDimensions] = useState({ width, height });
-  const activeStrokeIdRef = useRef<string | null>(null);
-  const lastRenderedPointCountRef = useRef(0);
+type SignaturePadToolbarProps = Readonly<{
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  onClear: () => void;
+  onDownload: () => void;
+}>;
 
-  const { state, send, strokes, canUndo, canRedo } = useSignatureMachine({
-    color: strokeColor,
-    width: strokeWidth,
-  });
-
-  // Handle responsive sizing
-  useEffect(() => {
-    const updateSize = () => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      setDimensions({
-        width: rect.width, // Canvas takes full container width
-        height,
-      });
-    };
-
-    updateSize();
-    const resizeObserver = new ResizeObserver(updateSize);
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
-
-    return () => resizeObserver.disconnect();
-  }, [width, height]);
-
-  // Initialize renderer and stabilizer
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    rendererRef.current = new SignatureRenderer(canvasRef.current);
-    stabilizerRef.current = new PenStabilizer({
-      algorithm: "holt",
-      level: stabilizationLevel,
-      holt: { alpha: 0.18, beta: 0.06 },
-      pressure: { mode: "none" },
-    });
-
-    return () => {
-      rendererRef.current?.destroy();
-      rendererRef.current = null;
-      stabilizerRef.current = null;
-    };
-  }, []);
-
-  // Handle dimension changes
-  useEffect(() => {
-    if (canvasRef.current) {
-      canvasRef.current.style.width = `${dimensions.width}px`;
-      canvasRef.current.style.height = `${dimensions.height}px`;
-    }
-
-    if (rendererRef.current) {
-      rendererRef.current.resize();
-      rendererRef.current.renderStrokes(strokes);
-    }
-  }, [dimensions, strokes]);
-
-  // Get coordinates with proper DPR handling
-  const getCoordinates = useCallback((e: React.PointerEvent) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-
-    const rect = canvas.getBoundingClientRect();
-
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-      pressure: e.pointerType === "pen" ? e.pressure : 0.5,
-      timestamp: e.nativeEvent.timeStamp,
-    };
-  }, []);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-
-      const point = getCoordinates(e);
-      if (!point) return;
-
-      // Capture pointer
-      const target = e.target as Element;
-      target.setPointerCapture(e.pointerId);
-      pointerCapturedRef.current = true;
-
-      stabilizerRef.current?.reset();
-      lastRenderedPointCountRef.current = 0;
-      activeStrokeIdRef.current = null;
-      const stabilized = stabilizerRef.current?.addPoint(point) ?? point;
-
-      send({ type: "POINTER_DOWN", point: stabilized });
-    },
-    [send, getCoordinates],
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (state.status !== "drawing") return;
-      e.preventDefault();
-
-      const canvas = canvasRef.current;
-      const stabilizer = stabilizerRef.current;
-      if (!canvas || !stabilizer) return;
-
-      const rect = canvas.getBoundingClientRect();
-
-      const native = e.nativeEvent as PointerEvent;
-      const events = native.getCoalescedEvents?.() ?? [native];
-
-      const points: Point[] = [];
-
-      for (const ev of events) {
-        const raw: Point = {
-          x: ev.clientX - rect.left,
-          y: ev.clientY - rect.top,
-          pressure: ev.pointerType === "pen" ? ev.pressure : 0.5,
-          timestamp: ev.timeStamp,
-        };
-
-        points.push(stabilizer.addPoint(raw));
-      }
-
-      send({ type: "POINTER_MOVE_BATCH", points });
-    },
-    [send, state.status],
-  );
-
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      if (pointerCapturedRef.current) {
-        const target = e.target as Element;
-        target.releasePointerCapture(e.pointerId);
-        pointerCapturedRef.current = false;
-      }
-
-      send({ type: "POINTER_UP" });
-      onStrokeEnd?.(strokes);
-    },
-    [send, strokes, onStrokeEnd],
-  );
-
-  // Reactive rendering
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-
-    if (state.status === "drawing" && state.currentStroke) {
-      const stroke = state.currentStroke;
-
-      if (activeStrokeIdRef.current !== stroke.id) {
-        activeStrokeIdRef.current = stroke.id;
-        lastRenderedPointCountRef.current = 0;
-      }
-
-      const pointCount = stroke.points.length;
-      const lastRendered = lastRenderedPointCountRef.current;
-
-      if (pointCount > lastRendered) {
-        renderer.appendStrokeSegments(stroke, lastRendered);
-        lastRenderedPointCountRef.current = pointCount;
-      }
-      return;
-    }
-
-    activeStrokeIdRef.current = null;
-    lastRenderedPointCountRef.current = 0;
-    renderer.renderStrokes(strokes);
-  }, [state.status, state.currentStroke, strokes]);
-
-  const exportSVG = useCallback(() => {
-    const estimateStrokeLength = (points: { x: number; y: number }[]) => {
-      let len = 0;
-      for (let i = 1; i < points.length; i++) {
-        const dx = points[i].x - points[i - 1].x;
-        const dy = points[i].y - points[i - 1].y;
-        len += Math.hypot(dx, dy);
-      }
-      return len;
-    };
-
-    // Tweak these to taste
-    const pxPerSecond = 900; // drawing speed
-    const minStrokeMs = 120;
-    const maxStrokeMs = 2200;
-    const gapBetweenStrokesMs = 60;
-
-    let cumulativeDelayMs = 0;
-
-    const pathElements = strokes
-      .map((stroke, index) => {
-        if (stroke.points.length < 2) return null;
-
-        let pathData = `M ${stroke.points[0].x.toFixed(1)} ${stroke.points[0].y.toFixed(1)}`;
-
-        for (let i = 1; i < stroke.points.length - 1; i++) {
-          const curr = stroke.points[i];
-          const next = stroke.points[i + 1];
-          const midX = ((curr.x + next.x) / 2).toFixed(1);
-          const midY = ((curr.y + next.y) / 2).toFixed(1);
-          pathData += ` Q ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}, ${midX} ${midY}`;
-        }
-
-        const last = stroke.points[stroke.points.length - 1];
-        pathData += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
-
-        const approxLenPx = estimateStrokeLength(stroke.points);
-        const durationMs = Math.min(
-          maxStrokeMs,
-          Math.max(minStrokeMs, (approxLenPx / pxPerSecond) * 1000),
-        );
-
-        const delayMs = cumulativeDelayMs;
-        cumulativeDelayMs += durationMs + gapBetweenStrokesMs;
-
-        return h("path", {
-          d: pathData,
-          id: `stroke-${index}`,
-          class: "sig-path",
-          stroke: "currentColor",
-          strokeWidth: stroke.width,
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-          fill: "none",
-
-          // Normalized stroke-dash animation units
-          pathLength: 1,
-          style: `
-          animation-delay: ${delayMs}ms;
-          animation-duration: ${durationMs}ms;
-        `,
-        });
-      })
-      .filter(Boolean);
-
-    const styleNode = h(
-      "style",
-      {},
-      `
-      .sig-path {
-        stroke-dasharray: 1;
-        stroke-dashoffset: 1;
-        animation-name: sig-draw;
-        animation-timing-function: linear;
-        animation-fill-mode: forwards;
-      }
-
-      @keyframes sig-draw {
-        to {
-          stroke-dashoffset: 0;
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .sig-path {
-          animation: none;
-          stroke-dashoffset: 0;
-        }
-      }
-    `,
-    );
-
-    const svgTree = h(
-      "svg",
-      {
-        width: dimensions.width,
-        height: dimensions.height,
-        viewBox: `0 0 ${dimensions.width} ${dimensions.height}`,
-        xmlns: "http://www.w3.org/2000/svg",
-      },
-      [styleNode, ...pathElements],
-    );
-
-    const svgString = toHtml(svgTree);
-
-    const blob = new Blob([svgString], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `signature-${Date.now()}.svg`;
-    link.click();
-    URL.revokeObjectURL(url);
-
-    onChange?.(svgString);
-
-    return svgString;
-  }, [strokes, dimensions, onChange]);
-
-  const handleClear = useCallback(() => {
-    send({ type: "CLEAR" });
-    rendererRef.current?.clear();
-  }, [send]);
-
+function SignaturePadToolbar({
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  onClear,
+  onDownload,
+}: SignaturePadToolbarProps) {
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        `relative mx-auto w-full max-w-full rounded-md border border-border/80 overflow-hidden bg-card`,
-        className,
-      )}
-      style={{ touchAction: "none", height: dimensions.height }}
-    >
-      {/* Canvas Layer */}
-      <canvas
-        ref={canvasRef}
-        width={dimensions.width}
-        height={dimensions.height}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        className="absolute inset-0 cursor-crosshair touch-none select-none z-10"
-        style={{ WebkitTouchCallout: "none" }}
-      />
-
-      {/* Minimal Signature Line Empty State */}
-      <div className="absolute inset-0 pointer-events-none transition-opacity duration-700 z-0 flex flex-col items-center justify-center">
-        <div className="absolute bottom-[30%] w-full flex items-end text-foreground/20 dark:text-foreground/20">
-          <div className="flex-1 border-b-[1.5px] border-dashed border-foreground/20 dark:border-foreground/20" />
-        </div>
-      </div>
-
+    <>
       {/* Floating Toolbar: Undo, Redo, Clear (Bottom Left) */}
       <div className="absolute bottom-5 left-5 z-20 flex items-center bg-card/60 backdrop-blur-md border border-border/40 rounded-full p-1.5 transition-all">
         <button
-          onClick={() => send({ type: "UNDO" })}
+          onClick={onUndo}
           disabled={!canUndo}
           className="p-2.5 text-foreground/70 hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground/70 disabled:cursor-not-allowed group relative"
           aria-label="Undo"
+          type="button"
         >
           <svg
             width="18"
@@ -388,10 +113,11 @@ export function SignaturePad({
         <div className="w-px h-5 bg-border/60 mx-1" />
 
         <button
-          onClick={() => send({ type: "REDO" })}
+          onClick={onRedo}
           disabled={!canRedo}
           className="p-2.5 text-foreground/70 hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground/70 disabled:cursor-not-allowed group relative"
           aria-label="Redo"
+          type="button"
         >
           <svg
             width="18"
@@ -414,9 +140,10 @@ export function SignaturePad({
         <div className="w-px h-5 bg-border/60 mx-1" />
 
         <button
-          onClick={handleClear}
+          onClick={onClear}
           className="p-2.5 text-foreground/70 hover:text-destructive hover:bg-destructive/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring group relative"
           aria-label="Clear"
+          type="button"
         >
           <svg
             width="18"
@@ -441,9 +168,10 @@ export function SignaturePad({
       {/* Primary Action: Save Seal (Bottom Right) */}
       <div className="absolute bottom-5 right-5 z-20 flex">
         <button
-          onClick={exportSVG}
+          onClick={onDownload}
           className="group flex items-center gap-2.5 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-primary-foreground transition-all duration-300 rounded-full bg-primary hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 backdrop-blur-md"
           aria-label="Export signature as SVG"
+          type="button"
         >
           <svg
             width="16"
@@ -462,6 +190,381 @@ export function SignaturePad({
           </svg>
         </button>
       </div>
-    </div>
+    </>
   );
 }
+
+export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadProps>(
+  function SignaturePad(
+    {
+      width = 600,
+      height = 300,
+      onChange,
+      onStrokeEnd,
+      onStrokesChange,
+      onCanUndoChange,
+      onCanRedoChange,
+      className = "",
+      strokeColor = "#1c140f",
+      strokeWidth = 2.5,
+      stabilizationLevel = 100,
+      showToolbar = true,
+    }: SignaturePadProps,
+    ref,
+  ) {
+    const containerRef = React.useRef<HTMLDivElement>(null);
+
+    // Two canvases:
+    // - base: committed strokes
+    // - live: active stroke (cleared & re-rendered each update)
+    const baseCanvasRef = React.useRef<HTMLCanvasElement>(null);
+    const liveCanvasRef = React.useRef<HTMLCanvasElement>(null);
+
+    const baseRendererRef = React.useRef<SignatureRenderer | null>(null);
+    const liveRendererRef = React.useRef<SignatureRenderer | null>(null);
+
+    const stabilizerRef = React.useRef<PenStabilizer | null>(null);
+    const pointerCapturedRef = React.useRef(false);
+
+    const [dimensions, setDimensions] = React.useState({ width, height });
+
+    const { state, send, strokes, canUndo, canRedo } = useSignatureMachine({
+      color: strokeColor,
+      width: strokeWidth,
+    });
+
+    // Refs for imperative + callback correctness (avoid stale closures).
+    const strokesRef = React.useRef<Stroke[]>(strokes);
+    const canUndoRef = React.useRef<boolean>(canUndo);
+    const canRedoRef = React.useRef<boolean>(canRedo);
+    const dimensionsRef = React.useRef(dimensions);
+
+    React.useEffect(() => {
+      strokesRef.current = strokes;
+    }, [strokes]);
+
+    React.useEffect(() => {
+      canUndoRef.current = canUndo;
+    }, [canUndo]);
+
+    React.useEffect(() => {
+      canRedoRef.current = canRedo;
+    }, [canRedo]);
+
+    React.useEffect(() => {
+      dimensionsRef.current = dimensions;
+    }, [dimensions]);
+
+    // Handle responsive sizing
+    React.useEffect(() => {
+      const updateSize = () => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        setDimensions({
+          width: rect.width,
+          height,
+        });
+      };
+
+      updateSize();
+      const resizeObserver = new ResizeObserver(updateSize);
+      if (containerRef.current) {
+        resizeObserver.observe(containerRef.current);
+      }
+
+      return () => resizeObserver.disconnect();
+    }, [width, height]);
+
+    // Initialize renderers and stabilizer (one-time)
+    React.useEffect(() => {
+      if (!baseCanvasRef.current || !liveCanvasRef.current) return;
+
+      baseRendererRef.current = new SignatureRenderer(baseCanvasRef.current);
+      liveRendererRef.current = new SignatureRenderer(liveCanvasRef.current);
+
+      stabilizerRef.current = new PenStabilizer({
+        algorithm: "holt",
+        level: stabilizationLevel,
+        holt: { alpha: 0.18, beta: 0.06 },
+        pressure: { mode: "none" },
+      });
+
+      return () => {
+        baseRendererRef.current?.destroy();
+        liveRendererRef.current?.destroy();
+        baseRendererRef.current = null;
+        liveRendererRef.current = null;
+        stabilizerRef.current = null;
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Keep canvas DOM sizes in sync; resize renderers on dimension changes
+    React.useEffect(() => {
+      const baseCanvas = baseCanvasRef.current;
+      const liveCanvas = liveCanvasRef.current;
+
+      if (baseCanvas) {
+        baseCanvas.style.width = `${dimensions.width}px`;
+        baseCanvas.style.height = `${dimensions.height}px`;
+      }
+
+      if (liveCanvas) {
+        liveCanvas.style.width = `${dimensions.width}px`;
+        liveCanvas.style.height = `${dimensions.height}px`;
+      }
+
+      baseRendererRef.current?.resize();
+      liveRendererRef.current?.resize();
+
+      // Re-render base strokes after a resize
+      baseRendererRef.current?.renderStrokes(strokes);
+      // Clear live overlay after a resize
+      liveRendererRef.current?.clear();
+    }, [dimensions, strokes]);
+
+    // External control callbacks
+    React.useEffect(() => {
+      onStrokesChange?.(strokes);
+    }, [strokes, onStrokesChange]);
+
+    React.useEffect(() => {
+      onCanUndoChange?.(canUndo);
+    }, [canUndo, onCanUndoChange]);
+
+    React.useEffect(() => {
+      onCanRedoChange?.(canRedo);
+    }, [canRedo, onCanRedoChange]);
+
+    // Correct stroke-end timing: fires only when a stroke is committed.
+    const prevStatusRef = React.useRef<typeof state.status>(state.status);
+
+    React.useEffect(() => {
+      const prev = prevStatusRef.current;
+      prevStatusRef.current = state.status;
+
+      if (prev === "drawing" && state.status === "completed") {
+        onStrokeEnd?.(strokesRef.current);
+      }
+    }, [state.status, onStrokeEnd]);
+
+    // Live overlay rendering: clear & re-render only the active stroke
+    React.useEffect(() => {
+      const liveRenderer = liveRendererRef.current;
+      if (!liveRenderer) return;
+
+      if (state.status === "drawing" && state.currentStroke) {
+        liveRenderer.clear();
+        liveRenderer.renderStroke(state.currentStroke);
+        return;
+      }
+
+      liveRenderer.clear();
+    }, [state.status, state.currentStroke]);
+
+    // Get coordinates
+    const getCoordinates = React.useCallback((e: React.PointerEvent) => {
+      const canvas = liveCanvasRef.current;
+      if (!canvas) return null;
+
+      const rect = canvas.getBoundingClientRect();
+
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        pressure: e.pointerType === "pen" ? e.pressure : 0.5,
+        timestamp: e.nativeEvent.timeStamp,
+      };
+    }, []);
+
+    const handlePointerDown = React.useCallback(
+      (e: React.PointerEvent) => {
+        e.preventDefault();
+
+        const point = getCoordinates(e);
+        if (!point) return;
+
+        const target = e.target as Element;
+        target.setPointerCapture(e.pointerId);
+        pointerCapturedRef.current = true;
+
+        stabilizerRef.current?.reset();
+
+        const stabilized = stabilizerRef.current?.addPoint(point) ?? point;
+        send({ type: "POINTER_DOWN", point: stabilized });
+      },
+      [send, getCoordinates],
+    );
+
+    const handlePointerMove = React.useCallback(
+      (e: React.PointerEvent<HTMLCanvasElement>) => {
+        if (state.status !== "drawing") return;
+        e.preventDefault();
+
+        const canvas = liveCanvasRef.current;
+        const stabilizer = stabilizerRef.current;
+        if (!canvas || !stabilizer) return;
+
+        const rect = canvas.getBoundingClientRect();
+
+        const native = e.nativeEvent as PointerEvent;
+        const events = native.getCoalescedEvents?.() ?? [native];
+
+        const points: Point[] = [];
+
+        for (const ev of events) {
+          const raw: Point = {
+            x: ev.clientX - rect.left,
+            y: ev.clientY - rect.top,
+            pressure: ev.pointerType === "pen" ? ev.pressure : 0.5,
+            timestamp: ev.timeStamp,
+          };
+
+          points.push(stabilizer.addPoint(raw));
+        }
+
+        send({ type: "POINTER_MOVE_BATCH", points });
+      },
+      [send, state.status],
+    );
+
+    const handlePointerUp = React.useCallback(
+      (e: React.PointerEvent) => {
+        if (pointerCapturedRef.current) {
+          const target = e.target as Element;
+          target.releasePointerCapture(e.pointerId);
+          pointerCapturedRef.current = false;
+        }
+
+        send({ type: "POINTER_UP" });
+      },
+      [send],
+    );
+
+    // Base rendering: whenever committed strokes change, redraw base.
+    // (This also runs after a stroke completes, so base becomes the source of truth.)
+    React.useEffect(() => {
+      baseRendererRef.current?.renderStrokes(strokes);
+    }, [strokes]);
+
+    const getSVG = React.useCallback(() => {
+      return buildSignatureSvg({
+        strokes: strokesRef.current,
+        size: dimensionsRef.current,
+      });
+    }, []);
+
+    const downloadSVG = React.useCallback(
+      (options?: { filename?: string }) => {
+        const svgString = buildSignatureSvg({
+          strokes: strokesRef.current,
+          size: dimensionsRef.current,
+        });
+
+        const blob = new Blob([svgString], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = options?.filename ?? `signature-${Date.now()}.svg`;
+        link.click();
+        URL.revokeObjectURL(url);
+
+        onChange?.(svgString);
+
+        return svgString;
+      },
+      [onChange],
+    );
+
+    const clear = React.useCallback(() => {
+      send({ type: "CLEAR" });
+      baseRendererRef.current?.clear();
+      liveRendererRef.current?.clear();
+    }, [send]);
+
+    React.useImperativeHandle(
+      ref,
+      (): SignaturePadHandle => ({
+        undo() {
+          send({ type: "UNDO" });
+        },
+        redo() {
+          send({ type: "REDO" });
+        },
+        clear() {
+          clear();
+        },
+        getStrokes() {
+          return strokesRef.current;
+        },
+        canUndo() {
+          return canUndoRef.current;
+        },
+        canRedo() {
+          return canRedoRef.current;
+        },
+        getSVG() {
+          return getSVG();
+        },
+        downloadSVG(options) {
+          return downloadSVG(options);
+        },
+      }),
+      [send, clear, getSVG, downloadSVG],
+    );
+
+    return (
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative mx-auto w-full max-w-full rounded-md border " +
+            "border-border/80 overflow-hidden bg-card",
+          className,
+        )}
+        style={{ touchAction: "none", height: dimensions.height }}
+      >
+        {/* Base canvas: committed strokes */}
+        <canvas
+          ref={baseCanvasRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          className="absolute inset-0 select-none z-10 pointer-events-none"
+          style={{ WebkitTouchCallout: "none" }}
+        />
+
+        {/* Live canvas: active stroke + pointer events */}
+        <canvas
+          ref={liveCanvasRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          className="absolute inset-0 cursor-crosshair touch-none select-none z-20"
+          style={{ WebkitTouchCallout: "none" }}
+        />
+
+        {/* Minimal Signature Line Empty State */}
+        <div className="absolute inset-0 pointer-events-none transition-opacity duration-700 z-0 flex flex-col items-center justify-center">
+          <div className="absolute bottom-[30%] w-full flex items-end text-foreground/20 dark:text-foreground/20">
+            <div className="flex-1 border-b-[1.5px] border-dashed border-foreground/20 dark:border-foreground/20" />
+          </div>
+        </div>
+
+        {showToolbar ? (
+          <SignaturePadToolbar
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={() => send({ type: "UNDO" })}
+            onRedo={() => send({ type: "REDO" })}
+            onClear={clear}
+            onDownload={() => downloadSVG()}
+          />
+        ) : null}
+      </div>
+    );
+  },
+);
+
+SignaturePad.displayName = "SignaturePad";

@@ -57,6 +57,18 @@ export class SignatureRenderer {
     return Math.round(width);
   }
 
+  clear() {
+    this.ctx.clearRect(0, 0, this.width, this.height);
+  }
+
+  destroy() {
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /**
+   * Render all strokes from scratch (clears the canvas).
+   * This is the "final" rendering used after a stroke completes.
+   */
   renderStrokes(strokes: Stroke[]) {
     this.clear();
 
@@ -65,8 +77,43 @@ export class SignatureRenderer {
     });
   }
 
+  /**
+   * Render a single stroke.
+   *
+   * Useful for "live preview" rendering on an overlay canvas, where you typically
+   * clear the overlay and re-render only the active stroke each pointer move.
+   */
+  renderStroke(stroke: Stroke, opts?: { clear?: boolean }) {
+    if (opts?.clear) this.clear();
+    this.renderCompleteStroke(stroke);
+  }
+
+  private renderDot(stroke: Stroke) {
+    if (stroke.points.length !== 1) return;
+
+    const p = stroke.points[0];
+    const x = this.snapToHalfPixel(p.x);
+    const y = this.snapToHalfPixel(p.y);
+
+    const pressure = p.pressure;
+    const width = stroke.width * (0.5 + pressure * 0.5);
+
+    const radius = this.snapLineWidth(width / 2);
+
+    this.ctx.fillStyle = stroke.color;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+    this.ctx.fill();
+  }
+
   private renderCompleteStroke(stroke: Stroke) {
-    if (stroke.points.length < 2) return;
+    if (stroke.points.length === 0) return;
+
+    // Handle a "tap" stroke (single point).
+    if (stroke.points.length === 1) {
+      this.renderDot(stroke);
+      return;
+    }
 
     this.ctx.strokeStyle = stroke.color;
 
@@ -102,30 +149,26 @@ export class SignatureRenderer {
       this.ctx.moveTo(midX, midY);
     }
 
-    if (points.length > 1) {
-      const last = points[points.length - 1];
-      const lastX = this.snapToHalfPixel(last.x);
-      const lastY = this.snapToHalfPixel(last.y);
-      const width = stroke.width * (0.5 + last.pressure * 0.5);
-      this.ctx.lineWidth = this.snapLineWidth(width);
-      this.ctx.lineTo(lastX, lastY);
-      this.ctx.stroke();
-    }
+    const last = points[points.length - 1];
+    const lastX = this.snapToHalfPixel(last.x);
+    const lastY = this.snapToHalfPixel(last.y);
+    const width = stroke.width * (0.5 + last.pressure * 0.5);
+    this.ctx.lineWidth = this.snapLineWidth(width);
+    this.ctx.lineTo(lastX, lastY);
+    this.ctx.stroke();
   }
 
+  /**
+   * Incremental rendering methods retained for compatibility. The signature pad
+   * previously used these to append segments while drawing. With an overlay
+   * "live preview" canvas, you typically do NOT need these anymore.
+   */
   appendStrokeSegment(stroke: Stroke, segmentIndex: number) {
     const points = stroke.points;
 
     if (points.length < 2) {
       if (points.length === 1) {
-        const x = this.snapToHalfPixel(points[0].x);
-        const y = this.snapToHalfPixel(points[0].y);
-        const radius = this.snapLineWidth(stroke.width / 2);
-
-        this.ctx.fillStyle = stroke.color;
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, radius, 0, Math.PI * 2);
-        this.ctx.fill();
+        this.renderDot(stroke);
       }
       return;
     }
@@ -180,13 +223,5 @@ export class SignatureRenderer {
   appendStrokeSegments(stroke: Stroke, fromPointIndex: number) {
     const startSegmentIndex = Math.max(0, fromPointIndex - 1);
     this.appendStrokeSegment(stroke, startSegmentIndex);
-  }
-
-  clear() {
-    this.ctx.clearRect(0, 0, this.width, this.height);
-  }
-
-  destroy() {
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 }
