@@ -1,10 +1,13 @@
-import { cn } from "@/lib/utils";
+import { toHtml } from "hast-util-to-html";
+import { h } from "hastscript";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { cn } from "@/lib/utils";
+
 import { useSignatureMachine } from "./hooks";
 import type { Point, Stroke } from "./machine";
 import { SignatureRenderer } from "./renderer";
 import { PenStabilizer } from "./stabilizer";
-
 
 interface SignaturePadProps {
   width?: number;
@@ -205,34 +208,111 @@ export function SignaturePad({
   }, [state.status, state.currentStroke, strokes]);
 
   const exportSVG = useCallback(() => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${dimensions.width}" height="${dimensions.height}" viewBox="0 0 ${dimensions.width} ${dimensions.height}">
-  <rect width="100%" height="100%" fill="white"/>
-  ${strokes
-    .map((stroke) => {
-      if (stroke.points.length < 2) return "";
-
-      let pathData = `M ${stroke.points[0].x.toFixed(1)} ${stroke.points[0].y.toFixed(1)}`;
-
-      for (let i = 1; i < stroke.points.length - 1; i++) {
-        const curr = stroke.points[i];
-        const next = stroke.points[i + 1];
-        const midX = ((curr.x + next.x) / 2).toFixed(1);
-        const midY = ((curr.y + next.y) / 2).toFixed(1);
-        pathData += ` Q ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}, ${midX} ${midY}`;
+    const estimateStrokeLength = (points: { x: number; y: number }[]) => {
+      let len = 0;
+      for (let i = 1; i < points.length; i++) {
+        const dx = points[i].x - points[i - 1].x;
+        const dy = points[i].y - points[i - 1].y;
+        len += Math.hypot(dx, dy);
       }
+      return len;
+    };
 
-      if (stroke.points.length > 1) {
+    // Tweak these to taste
+    const pxPerSecond = 900; // drawing speed
+    const minStrokeMs = 120;
+    const maxStrokeMs = 2200;
+    const gapBetweenStrokesMs = 60;
+
+    let cumulativeDelayMs = 0;
+
+    const pathElements = strokes
+      .map((stroke, index) => {
+        if (stroke.points.length < 2) return null;
+
+        let pathData = `M ${stroke.points[0].x.toFixed(1)} ${stroke.points[0].y.toFixed(1)}`;
+
+        for (let i = 1; i < stroke.points.length - 1; i++) {
+          const curr = stroke.points[i];
+          const next = stroke.points[i + 1];
+          const midX = ((curr.x + next.x) / 2).toFixed(1);
+          const midY = ((curr.y + next.y) / 2).toFixed(1);
+          pathData += ` Q ${curr.x.toFixed(1)} ${curr.y.toFixed(1)}, ${midX} ${midY}`;
+        }
+
         const last = stroke.points[stroke.points.length - 1];
         pathData += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+
+        const approxLenPx = estimateStrokeLength(stroke.points);
+        const durationMs = Math.min(
+          maxStrokeMs,
+          Math.max(minStrokeMs, (approxLenPx / pxPerSecond) * 1000),
+        );
+
+        const delayMs = cumulativeDelayMs;
+        cumulativeDelayMs += durationMs + gapBetweenStrokesMs;
+
+        return h("path", {
+          d: pathData,
+          id: `stroke-${index}`,
+          class: "sig-path",
+          stroke: "currentColor",
+          strokeWidth: stroke.width,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          fill: "none",
+
+          // Normalized stroke-dash animation units
+          pathLength: 1,
+          style: `
+          animation-delay: ${delayMs}ms;
+          animation-duration: ${durationMs}ms;
+        `,
+        });
+      })
+      .filter(Boolean);
+
+    const styleNode = h(
+      "style",
+      {},
+      `
+      .sig-path {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
+        animation-name: sig-draw;
+        animation-timing-function: linear;
+        animation-fill-mode: forwards;
       }
 
-      return `<path d="${pathData}" stroke="${stroke.color}" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`;
-    })
-    .filter(Boolean)
-    .join("\n  ")}
-</svg>`;
+      @keyframes sig-draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
 
-    const blob = new Blob([svg], { type: "image/svg+xml" });
+      @media (prefers-reduced-motion: reduce) {
+        .sig-path {
+          animation: none;
+          stroke-dashoffset: 0;
+        }
+      }
+    `,
+    );
+
+    const svgTree = h(
+      "svg",
+      {
+        width: dimensions.width,
+        height: dimensions.height,
+        viewBox: `0 0 ${dimensions.width} ${dimensions.height}`,
+        xmlns: "http://www.w3.org/2000/svg",
+      },
+      [styleNode, ...pathElements],
+    );
+
+    const svgString = toHtml(svgTree);
+
+    const blob = new Blob([svgString], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -240,9 +320,9 @@ export function SignaturePad({
     link.click();
     URL.revokeObjectURL(url);
 
-    onChange?.(svg);
+    onChange?.(svgString);
 
-    return svg;
+    return svgString;
   }, [strokes, dimensions, onChange]);
 
   const handleClear = useCallback(() => {

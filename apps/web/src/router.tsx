@@ -2,13 +2,12 @@ import type { AppRouter } from "@autographa/api/routers/index";
 
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import "./index.css";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { toast } from "sonner";
+import "./index.css";
 
-import Loader from "./components/loader";
 import { routeTree } from "./routeTree.gen";
 import { TRPCProvider } from "./utils/trpc";
 
@@ -51,7 +50,6 @@ export const getRouter = () => {
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
     context: { trpc, queryClient },
-    defaultPendingComponent: () => <Loader />,
     defaultNotFoundComponent: () => <div>Not Found</div>,
     Wrap: ({ children }) => (
       <QueryClientProvider client={queryClient}>
