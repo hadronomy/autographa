@@ -1,8 +1,10 @@
+import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSignatureMachine } from "./hooks";
 import type { Point, Stroke } from "./machine";
 import { SignatureRenderer } from "./renderer";
 import { PenStabilizer } from "./stabilizer";
+
 
 interface SignaturePadProps {
   width?: number;
@@ -21,7 +23,7 @@ export function SignaturePad({
   onChange,
   onStrokeEnd,
   className = "",
-  strokeColor = "#1a1a1a",
+  strokeColor = "#1c140f", // Deep sepia ink default, fitting the Caligrapha theme
   strokeWidth = 2.5,
   stabilizationLevel = 100,
 }: SignaturePadProps) {
@@ -45,7 +47,7 @@ export function SignaturePad({
       if (!containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
       setDimensions({
-        width: Math.min(width, rect.width - 32),
+        width: rect.width, // Canvas takes full container width
         height,
       });
     };
@@ -76,7 +78,7 @@ export function SignaturePad({
       rendererRef.current = null;
       stabilizerRef.current = null;
     };
-  }, []); // Only on mount
+  }, []);
 
   // Handle dimension changes
   useEffect(() => {
@@ -89,7 +91,7 @@ export function SignaturePad({
       rendererRef.current.resize();
       rendererRef.current.renderStrokes(strokes);
     }
-  }, [dimensions]);
+  }, [dimensions, strokes]);
 
   // Get coordinates with proper DPR handling
   const getCoordinates = useCallback((e: React.PointerEvent) => {
@@ -149,7 +151,7 @@ export function SignaturePad({
           x: ev.clientX - rect.left,
           y: ev.clientY - rect.top,
           pressure: ev.pointerType === "pen" ? ev.pressure : 0.5,
-          timestamp: ev.timeStamp, // IMPORTANT: use event timestamp
+          timestamp: ev.timeStamp,
         };
 
         points.push(stabilizer.addPoint(raw));
@@ -182,16 +184,14 @@ export function SignaturePad({
     if (state.status === "drawing" && state.currentStroke) {
       const stroke = state.currentStroke;
 
-      // New stroke started
       if (activeStrokeIdRef.current !== stroke.id) {
         activeStrokeIdRef.current = stroke.id;
         lastRenderedPointCountRef.current = 0;
       }
 
       const pointCount = stroke.points.length;
-
-      // Draw everything added since last time (handles batched updates)
       const lastRendered = lastRenderedPointCountRef.current;
+
       if (pointCount > lastRendered) {
         renderer.appendStrokeSegments(stroke, lastRendered);
         lastRenderedPointCountRef.current = pointCount;
@@ -199,7 +199,6 @@ export function SignaturePad({
       return;
     }
 
-    // For undo/redo/clear/completed: full rerender
     activeStrokeIdRef.current = null;
     lastRenderedPointCountRef.current = 0;
     renderer.renderStrokes(strokes);
@@ -254,60 +253,133 @@ export function SignaturePad({
   return (
     <div
       ref={containerRef}
-      className={`flex flex-col bg-white rounded-xl shadow-lg overflow-hidden ${className}`}
-      style={{ touchAction: "none" }}
+      className={cn(
+        `relative mx-auto w-full max-w-full rounded-md border border-border/80 overflow-hidden bg-card`,
+        className,
+      )}
+      style={{ touchAction: "none", height: dimensions.height }}
     >
-      <div className="relative flex-1 flex items-center justify-center p-4 bg-gray-50">
-        <canvas
-          ref={canvasRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          className="border-2 border-gray-200 rounded-lg bg-white cursor-crosshair touch-none select-none"
-          style={{
-            WebkitTouchCallout: "none",
-          }}
-        />
-        {strokes.length === 0 && state.status === "idle" && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-gray-400 text-sm">Sign here</p>
-          </div>
-        )}
+      {/* Canvas Layer */}
+      <canvas
+        ref={canvasRef}
+        width={dimensions.width}
+        height={dimensions.height}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        className="absolute inset-0 cursor-crosshair touch-none select-none z-10"
+        style={{ WebkitTouchCallout: "none" }}
+      />
+
+      {/* Minimal Signature Line Empty State */}
+      <div className="absolute inset-0 pointer-events-none transition-opacity duration-700 z-0 flex flex-col items-center justify-center">
+        <div className="absolute bottom-[30%] w-full flex items-end text-foreground/20 dark:text-foreground/20">
+          <div className="flex-1 border-b-[1.5px] border-dashed border-foreground/20 dark:border-foreground/20" />
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 p-4 bg-gray-100 border-t border-gray-200">
+      {/* Floating Toolbar: Undo, Redo, Clear (Bottom Left) */}
+      <div className="absolute bottom-5 left-5 z-20 flex items-center bg-card/60 backdrop-blur-md border border-border/40 rounded-full p-1.5 transition-all">
         <button
           onClick={() => send({ type: "UNDO" })}
           disabled={!canUndo}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
-          aria-label="Undo last stroke"
+          className="p-2.5 text-foreground/70 hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground/70 disabled:cursor-not-allowed group relative"
+          aria-label="Undo"
         >
-          Undo
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 7v6h6" />
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+          </svg>
+          <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-foreground text-background text-[10px] font-bold tracking-widest uppercase rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            Undo
+          </span>
         </button>
+
+        <div className="w-px h-5 bg-border/60 mx-1" />
+
         <button
           onClick={() => send({ type: "REDO" })}
           disabled={!canRedo}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
-          aria-label="Redo last stroke"
+          className="p-2.5 text-foreground/70 hover:text-primary hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground/70 disabled:cursor-not-allowed group relative"
+          aria-label="Redo"
         >
-          Redo
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 7v6h-6" />
+            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
+          </svg>
+          <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-foreground text-background text-[10px] font-bold tracking-widest uppercase rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            Redo
+          </span>
         </button>
+
+        <div className="w-px h-5 bg-border/60 mx-1" />
+
         <button
           onClick={handleClear}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-          aria-label="Clear signature"
+          className="p-2.5 text-foreground/70 hover:text-destructive hover:bg-destructive/10 rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring group relative"
+          aria-label="Clear"
         >
-          Clear
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 6h18" />
+            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+          </svg>
+          <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 bg-foreground text-background text-[10px] font-bold tracking-widest uppercase rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+            Clear
+          </span>
         </button>
+      </div>
+
+      {/* Primary Action: Save Seal (Bottom Right) */}
+      <div className="absolute bottom-5 right-5 z-20 flex">
         <button
           onClick={exportSVG}
-          className="ml-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+          className="group flex items-center gap-2.5 px-6 py-3.5 text-xs font-bold tracking-widest uppercase text-primary-foreground transition-all duration-300 rounded-full bg-primary hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-95 backdrop-blur-md"
           aria-label="Export signature as SVG"
         >
-          Export SVG
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="transition-transform group-hover:scale-110"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" x2="12" y1="15" y2="3" />
+          </svg>
         </button>
       </div>
     </div>

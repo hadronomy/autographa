@@ -11,10 +11,11 @@ export class SignatureRenderer {
     this.dpr = window.devicePixelRatio || 1;
     this.width = canvas.width;
     this.height = canvas.height;
-    this.shouldSnap = this.dpr === 1;
+    // this.shouldSnap = this.dpr === 1;
+    this.shouldSnap = false;
 
     const contextOptions: CanvasRenderingContext2DSettings = {
-      alpha: false,
+      alpha: true,
       desynchronized: false,
     };
 
@@ -182,8 +183,7 @@ export class SignatureRenderer {
   }
 
   clear() {
-    this.ctx.fillStyle = "#ffffff";
-    this.ctx.fillRect(0, 0, this.width, this.height);
+    this.ctx.clearRect(0, 0, this.width, this.height);
   }
 
   destroy() {
