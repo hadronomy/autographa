@@ -8,6 +8,7 @@ import {
   CopyIcon,
   DownloadIcon,
   EraserIcon,
+  GithubIcon,
   Redo2Icon,
   Undo2Icon,
 } from "lucide-react";
@@ -218,8 +219,11 @@ function HomeComponent() {
         <Crosshair className="-bottom-px -right-px" />
 
         <div className="space-y-1.5">
-          <h1 className="text-2xl text-foreground font-mono font-bold tracking-tight">
+          <h1 className="text-2xl inline-flex items-center gap-1.5 text-foreground font-mono font-bold tracking-tight">
             autographa.
+            <a href="https://github.com/hadronomy/autographa" target="_blank">
+              <GithubIcon className="h-5 w-5" />
+            </a>
           </h1>
           <p className="text-xs text-muted-foreground font-mono">
             Create beautiful handwritten signatures
