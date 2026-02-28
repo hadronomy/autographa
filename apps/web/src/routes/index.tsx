@@ -144,7 +144,7 @@ function HomeComponent() {
                 <Input
                   value={filename}
                   onChange={(e) => setFilename(e.target.value)}
-                  className="w-[14rem]"
+                  className="w-56"
                   placeholder="signature"
                   aria-label="Export filename"
                 />
