@@ -4,6 +4,19 @@ export type BrushCanvasContext = Readonly<{
   dpr: number;
 }>;
 
+export type DashoffsetCurve = Readonly<{
+  /**
+   * Normalized times in [0..1], strictly increasing, including 0 and 1.
+   */
+  keyTimes: ReadonlyArray<number>;
+
+  /**
+   * stroke-dashoffset values in [1..0] (1=hidden, 0=fully drawn),
+   * same length as keyTimes.
+   */
+  values: ReadonlyArray<number>;
+}>;
+
 export type BrushSvgContext = Readonly<{
   size: { width: number; height: number };
   precision: number;
@@ -12,6 +25,25 @@ export type BrushSvgContext = Readonly<{
     enabled: boolean;
     delayMs: number;
     durationMs: number;
+
+    /**
+     * Optional per-stroke CSS animation-name override.
+     * If not provided, renderers will use the default keyframes name.
+     */
+    name?: string;
+
+    /**
+     * Optional per-stroke CSS timing function override.
+     * (For curve-driven keyframes you typically want "linear".)
+     */
+    timingFunction?: string;
+
+    /**
+     * Optional curve samples for non-linear reveal.
+     * - Centerline brushes can use it by emitting per-stroke CSS keyframes.
+     * - Fill/outline brushes can use it in SMIL inside reveal masks.
+     */
+    dashoffsetCurve?: DashoffsetCurve;
   }>;
 }>;
 

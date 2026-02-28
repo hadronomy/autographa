@@ -1,4 +1,5 @@
 import { escapeSvgAttr, svgStrokeAttrs } from "../svg";
+import type { DashoffsetCurve } from "./types";
 
 export function hashToSeed(str: string, mod = 10000): number {
   // FNV-1a 32-bit
@@ -12,7 +13,44 @@ export function hashToSeed(str: string, mod = 10000): number {
   return (h >>> 0) % mod;
 }
 
-function buildSmilReveal(args: { enabled: boolean; delayMs: number; durationMs: number }): string {
+function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.max(0, Math.min(1, v));
+}
+
+function serializeKeyTimes(times: ReadonlyArray<number>): string {
+  return times.map((t) => clamp01(t).toFixed(4)).join(";");
+}
+
+function serializeValues(values: ReadonlyArray<number>): string {
+  return values.map((v) => clamp01(v).toFixed(4)).join(";");
+}
+
+function isValidDashoffsetCurve(curve: DashoffsetCurve): boolean {
+  const { keyTimes, values } = curve;
+  if (keyTimes.length < 2) return false;
+  if (keyTimes.length !== values.length) return false;
+
+  // Must include endpoints
+  const t0 = keyTimes[0];
+  const t1 = keyTimes[keyTimes.length - 1];
+  if (Math.abs(t0 - 0) > 1e-6) return false;
+  if (Math.abs(t1 - 1) > 1e-6) return false;
+
+  // Must be strictly increasing
+  for (let i = 1; i < keyTimes.length; i++) {
+    if (!(keyTimes[i] > keyTimes[i - 1])) return false;
+  }
+
+  return true;
+}
+
+function buildSmilReveal(args: {
+  enabled: boolean;
+  delayMs: number;
+  durationMs: number;
+  dashoffsetCurve?: DashoffsetCurve;
+}): string {
   if (!args.enabled) return "";
 
   const delayMs = Math.max(0, args.delayMs);
@@ -26,8 +64,26 @@ function buildSmilReveal(args: { enabled: boolean; delayMs: number; durationMs: 
    * - If SMIL is not supported, both <set> and <animate> are ignored and the
    *   mask stays visible (static, but never invisible).
    */
+  const setHidden =
+    `<set attributeName="stroke-dashoffset" to="1" begin="0ms" ` + `dur="0ms" fill="freeze" />`;
+
+  const curve = args.dashoffsetCurve;
+
+  if (curve && isValidDashoffsetCurve(curve)) {
+    return (
+      setHidden +
+      `<animate attributeName="stroke-dashoffset" ` +
+      `begin="${escapeSvgAttr(String(delayMs))}ms" ` +
+      `dur="${escapeSvgAttr(String(durationMs))}ms" ` +
+      `values="${escapeSvgAttr(serializeValues(curve.values))}" ` +
+      `keyTimes="${escapeSvgAttr(serializeKeyTimes(curve.keyTimes))}" ` +
+      `calcMode="linear" ` +
+      `fill="freeze" />`
+    );
+  }
+
   return (
-    `<set attributeName="stroke-dashoffset" to="1" begin="0ms" dur="0ms" fill="freeze" />` +
+    setHidden +
     `<animate attributeName="stroke-dashoffset" from="1" to="0" ` +
     `begin="${escapeSvgAttr(String(delayMs))}ms" ` +
     `dur="${escapeSvgAttr(String(durationMs))}ms" ` +
@@ -40,7 +96,12 @@ export function buildRevealMaskSvg(args: {
   size: { width: number; height: number };
   centerlineD: string;
   revealWidth: number;
-  animation: { enabled: boolean; delayMs: number; durationMs: number };
+  animation: {
+    enabled: boolean;
+    delayMs: number;
+    durationMs: number;
+    dashoffsetCurve?: DashoffsetCurve;
+  };
 }): { defs: string; maskAttr: string } {
   const { maskId, size, centerlineD, revealWidth, animation } = args;
 
@@ -125,29 +186,19 @@ export function buildSharpieTextureMaskDef(args: {
   const s = Math.max(0, Math.min(1, strength));
   const base = (1 - s * 0.28).toFixed(3);
 
-  /**
-   * Key idea:
-   * - Derive an alpha field from turbulence (noise -> alpha).
-   * - Then apply that alpha to a white flood (so the mask uses luminance=white).
-   *
-   * If we output black with alpha, luminance-masks treat it as 0 => invisible.
-   */
   return (
     `<filter id="${escapeSvgAttr(filterId)}" x="0" y="0" width="100%" height="100%" ` +
     `color-interpolation-filters="sRGB">` +
     `<feTurbulence type="fractalNoise" baseFrequency="0.018 0.65" numOctaves="2" ` +
     `seed="${escapeSvgAttr(String(seed))}" result="n" />` +
-    // Put grayscale noise into alpha channel
     `<feColorMatrix in="n" type="matrix" values="` +
     `0 0 0 0 0 ` +
     `0 0 0 0 0 ` +
     `0 0 0 0 0 ` +
     `0.333 0.333 0.333 0 0" result="a" />` +
-    // Shape the alpha so texture is subtle
     `<feComponentTransfer in="a" result="aa">` +
     `<feFuncA type="table" tableValues="${escapeSvgAttr(base)} 1" />` +
     `</feComponentTransfer>` +
-    // White flood, then apply alpha via "in"
     `<feFlood flood-color="white" flood-opacity="1" result="w" />` +
     `<feComposite in="w" in2="aa" operator="in" result="out" />` +
     `</filter>` +
