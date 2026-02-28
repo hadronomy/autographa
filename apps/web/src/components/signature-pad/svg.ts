@@ -1,3 +1,5 @@
+import { optimize } from "svgo";
+
 import { estimateStrokeLength, toFixed } from "./brushes/geometry";
 import { getBrush } from "./brushes/registry";
 import type { Stroke } from "./machine";
@@ -147,17 +149,24 @@ export function buildSignatureSvg(params: BuildSignatureSvgParams): string {
       ? `<defs>${styleTag ? `<style>${styleTag}</style>` : ""}${defs.join("")}</defs>`
       : "";
 
-  return (
+  return optimize(
     `<svg` +
-    ` width="${toFixed(width, 0)}"` +
-    ` height="${toFixed(height, 0)}"` +
-    ` viewBox="0 0 ${toFixed(width, 0)} ${toFixed(height, 0)}"` +
-    ` xmlns="http://www.w3.org/2000/svg"` +
-    `>` +
-    defsBlock +
-    bodies.join("") +
-    `</svg>`
-  );
+      ` width="${toFixed(width, 0)}"` +
+      ` height="${toFixed(height, 0)}"` +
+      ` viewBox="0 0 ${toFixed(width, 0)} ${toFixed(height, 0)}"` +
+      ` xmlns="http://www.w3.org/2000/svg"` +
+      `>` +
+      defsBlock +
+      bodies.join("") +
+      `</svg>`,
+    {
+      js2svg: {
+        pretty: true,
+        indent: 2,
+      },
+      multipass: true,
+    },
+  ).data;
 }
 
 export function buildAnimatedPathStyle(args: {
