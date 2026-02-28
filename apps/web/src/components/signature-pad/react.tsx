@@ -523,7 +523,7 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
             "border-border/80 overflow-hidden bg-card",
           className,
         )}
-        style={{ touchAction: "none", height: dimensions.height }}
+        style={{ touchAction: "none" }}
       >
         <canvas
           ref={baseCanvasRef}
