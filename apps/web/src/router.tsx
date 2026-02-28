@@ -11,6 +11,8 @@ import "./index.css";
 import { routeTree } from "./routeTree.gen";
 import { TRPCProvider } from "./utils/trpc";
 
+import { NotFound } from "./components/not-found";
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
@@ -50,7 +52,7 @@ export const getRouter = () => {
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
     context: { trpc, queryClient },
-    defaultNotFoundComponent: () => <div>Not Found</div>,
+    defaultNotFoundComponent: NotFound,
     Wrap: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
