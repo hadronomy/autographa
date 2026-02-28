@@ -16,18 +16,77 @@ export interface RouterAppContext {
   queryClient: QueryClient;
 }
 
+const SITE_NAME = "autographa | animated signatures";
+const ROOT_DESCRIPTION = "Create beautiful handwritten signatures";
+const BASE_URL = "https://autographa.hadronomy.com";
+const OG_IMAGE_URL = "/api/og/autographa";
+
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   head: () => ({
     meta: [
-      {
-        charSet: "utf-8",
-      },
+      { charSet: "utf-8" },
       {
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "autographa",
+        title: SITE_NAME,
+      },
+      {
+        name: "description",
+        content: ROOT_DESCRIPTION,
+      },
+      {
+        name: "keywords",
+        content: "signature, react, clean, svg, animated",
+      },
+      {
+        name: "theme-color",
+        content: "#050505",
+      },
+      {
+        property: "og:site_name",
+        content: SITE_NAME,
+      },
+      {
+        property: "og:title",
+        content: SITE_NAME,
+      },
+      {
+        property: "og:description",
+        content: ROOT_DESCRIPTION,
+      },
+      {
+        property: "og:type",
+        content: "website",
+      },
+      {
+        property: "og:url",
+        content: BASE_URL,
+      },
+      {
+        property: "og:image",
+        content: OG_IMAGE_URL,
+      },
+      {
+        name: "twitter:card",
+        content: "summary_large_image",
+      },
+      {
+        name: "twitter:title",
+        content: SITE_NAME,
+      },
+      {
+        name: "twitter:url",
+        content: BASE_URL,
+      },
+      {
+        name: "twitter:description",
+        content: ROOT_DESCRIPTION,
+      },
+      {
+        name: "twitter:image",
+        content: OG_IMAGE_URL,
       },
     ],
     links: [

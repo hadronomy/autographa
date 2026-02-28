@@ -9,10 +9,11 @@
   },
   "dependencies": {
     "@autographa/api": "workspace:*",
-    "@autographa/auth": "workspace:*",
     "@autographa/env": "workspace:*",
     "@base-ui/react": "^1.0.0",
     "@tailwindcss/vite": "^4.1.8",
+    "@takumi-rs/image-response": "^0.69.4",
+    "@takumi-rs/template": "^0.60.2",
     "@tanstack/react-devtools": "^0.9.6",
     "@tanstack/react-form": "^1.28.0",
     "@tanstack/react-hotkeys": "^0.3.0",

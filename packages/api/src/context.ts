@@ -1,12 +1,6 @@
-import { auth } from "@autographa/auth";
-
-export async function createContext({ req }: { req: Request }) {
-  const session = await auth.api.getSession({
-    headers: req.headers,
-  });
-  return {
-    session,
-  };
+// oxlint-disable-next-line no-empty-pattern
+export async function createContext({}: { req: Request }) {
+  return {};
 }
 
 export type Context = Awaited<ReturnType<typeof createContext>>;
