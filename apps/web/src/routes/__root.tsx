@@ -10,6 +10,8 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
 import { Toaster } from "sileo";
 
+import { env } from "@autographa/env/web";
+
 import appCss from "../index.css?url";
 export interface RouterAppContext {
   trpc: TRPCOptionsProxy<AppRouter>;
@@ -18,7 +20,7 @@ export interface RouterAppContext {
 
 const SITE_NAME = "autographa | animated signatures";
 const ROOT_DESCRIPTION = "Create beautiful handwritten signatures";
-const BASE_URL = "https://autographa.hadronomy.com";
+const BASE_URL = env.VITE_APP_URL;
 const OG_IMAGE_URL = "/api/og/autographa";
 
 export const Route = createRootRouteWithContext<RouterAppContext>()({
