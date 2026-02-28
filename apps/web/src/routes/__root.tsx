@@ -113,21 +113,23 @@ function RootDocument() {
           <Outlet />
         </div>
         <Toaster position="top-right" options={{ duration: 1200 }} />
-        <TanStackDevtools
-          plugins={[
-            {
-              name: "TanStack Query",
-              render: <ReactQueryDevtoolsPanel />,
-              defaultOpen: true,
-            },
-            {
-              name: "TanStack Router",
-              render: <TanStackRouterDevtoolsPanel />,
-              defaultOpen: false,
-            },
-            hotkeysDevtoolsPlugin(),
-          ]}
-        />
+        {import.meta.env.DEV && (
+          <TanStackDevtools
+            plugins={[
+              {
+                name: "TanStack Query",
+                render: <ReactQueryDevtoolsPanel />,
+                defaultOpen: true,
+              },
+              {
+                name: "TanStack Router",
+                render: <TanStackRouterDevtoolsPanel />,
+                defaultOpen: false,
+              },
+              hotkeysDevtoolsPlugin(),
+            ]}
+          />
+        )}
         <Scripts />
       </body>
     </html>

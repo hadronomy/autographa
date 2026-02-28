@@ -5,6 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["CORS_ORIGIN", "VITE_APP_URL"],
       "outputs": ["dist/**"]
     },
     "lint": {
