@@ -1,5 +1,5 @@
 import { useCallback, useReducer } from "react";
-import type { Point, Stroke } from "./machine";
+import type { BrushId, Point, Stroke } from "./machine";
 
 interface MachineState {
   status: "idle" | "drawing" | "completed";
@@ -17,9 +17,15 @@ type MachineAction =
   | { type: "UNDO" }
   | { type: "REDO" };
 
+export type BrushSelection = Readonly<{
+  id: BrushId;
+  settings?: Record<string, unknown>;
+}>;
+
 interface MachineOptions {
   color?: string;
   width?: number;
+  brush?: BrushSelection;
 }
 
 /**
@@ -45,6 +51,11 @@ function machineReducer(
           points: [action.point],
           color: options.color ?? "#1a1a1a",
           width: options.width ?? 2.5,
+          brush: {
+            id: options.brush?.id ?? "monoline",
+            version: 1,
+            settings: options.brush?.settings ?? {},
+          },
         };
 
         return {

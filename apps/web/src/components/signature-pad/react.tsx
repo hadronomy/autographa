@@ -2,8 +2,8 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-import { useSignatureMachine } from "./hooks";
-import type { Point, Stroke } from "./machine";
+import { useSignatureMachine, type BrushSelection } from "./hooks";
+import type { BrushId, Point, Stroke } from "./machine";
 import { SignatureRenderer } from "./renderer";
 import { PenStabilizer } from "./stabilizer";
 import { buildSignatureSvg } from "./svg";
@@ -58,6 +58,15 @@ interface SignaturePadProps {
   stabilizationLevel?: number;
 
   /**
+   * Brush selection applied to newly-started strokes.
+   * Defaults to { id: "monoline" } (the current brush).
+   */
+  brush?: Readonly<{
+    id: BrushId;
+    settings?: Record<string, unknown>;
+  }>;
+
+  /**
    * Whether to render the internal floating toolbar + export button.
    * Defaults to true to avoid changing existing behavior.
    */
@@ -83,7 +92,6 @@ function SignaturePadToolbar({
 }: SignaturePadToolbarProps) {
   return (
     <>
-      {/* Floating Toolbar: Undo, Redo, Clear (Bottom Left) */}
       <div className="absolute bottom-5 left-5 z-20 flex items-center bg-card/60 backdrop-blur-md border border-border/40 rounded-full p-1.5 transition-all">
         <button
           onClick={onUndo}
@@ -165,7 +173,6 @@ function SignaturePadToolbar({
         </button>
       </div>
 
-      {/* Primary Action: Save Seal (Bottom Right) */}
       <div className="absolute bottom-5 right-5 z-20 flex">
         <button
           onClick={onDownload}
@@ -208,15 +215,13 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       strokeColor = "#1c140f",
       strokeWidth = 2.5,
       stabilizationLevel = 100,
+      brush = { id: "monoline" },
       showToolbar = true,
     }: SignaturePadProps,
     ref,
   ) {
     const containerRef = React.useRef<HTMLDivElement>(null);
 
-    // Two canvases:
-    // - base: committed strokes
-    // - live: active stroke (cleared & re-rendered each update)
     const baseCanvasRef = React.useRef<HTMLCanvasElement>(null);
     const liveCanvasRef = React.useRef<HTMLCanvasElement>(null);
 
@@ -228,12 +233,20 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
 
     const [dimensions, setDimensions] = React.useState({ width, height });
 
+    const brushSelection: BrushSelection = React.useMemo(
+      () => ({
+        id: brush.id,
+        settings: brush.settings ?? {},
+      }),
+      [brush.id, brush.settings],
+    );
+
     const { state, send, strokes, canUndo, canRedo } = useSignatureMachine({
       color: strokeColor,
       width: strokeWidth,
+      brush: brushSelection,
     });
 
-    // Refs for imperative + callback correctness (avoid stale closures).
     const strokesRef = React.useRef<Stroke[]>(strokes);
     const canUndoRef = React.useRef<boolean>(canUndo);
     const canRedoRef = React.useRef<boolean>(canRedo);
@@ -255,7 +268,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       dimensionsRef.current = dimensions;
     }, [dimensions]);
 
-    // Handle responsive sizing
     React.useEffect(() => {
       const updateSize = () => {
         if (!containerRef.current) return;
@@ -275,7 +287,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       return () => resizeObserver.disconnect();
     }, [width, height]);
 
-    // Initialize renderers and stabilizer (one-time)
     React.useEffect(() => {
       if (!baseCanvasRef.current || !liveCanvasRef.current) return;
 
@@ -299,7 +310,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Keep canvas DOM sizes in sync; resize renderers on dimension changes
     React.useEffect(() => {
       const baseCanvas = baseCanvasRef.current;
       const liveCanvas = liveCanvasRef.current;
@@ -317,13 +327,10 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       baseRendererRef.current?.resize();
       liveRendererRef.current?.resize();
 
-      // Re-render base strokes after a resize
       baseRendererRef.current?.renderStrokes(strokes);
-      // Clear live overlay after a resize
       liveRendererRef.current?.clear();
     }, [dimensions, strokes]);
 
-    // External control callbacks
     React.useEffect(() => {
       onStrokesChange?.(strokes);
     }, [strokes, onStrokesChange]);
@@ -336,7 +343,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       onCanRedoChange?.(canRedo);
     }, [canRedo, onCanRedoChange]);
 
-    // Correct stroke-end timing: fires only when a stroke is committed.
     const prevStatusRef = React.useRef<typeof state.status>(state.status);
 
     React.useEffect(() => {
@@ -348,7 +354,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       }
     }, [state.status, onStrokeEnd]);
 
-    // Live overlay rendering: clear & re-render only the active stroke
     React.useEffect(() => {
       const liveRenderer = liveRendererRef.current;
       if (!liveRenderer) return;
@@ -362,7 +367,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       liveRenderer.clear();
     }, [state.status, state.currentStroke]);
 
-    // Get coordinates
     const getCoordinates = React.useCallback((e: React.PointerEvent) => {
       const canvas = liveCanvasRef.current;
       if (!canvas) return null;
@@ -441,8 +445,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
       [send],
     );
 
-    // Base rendering: whenever committed strokes change, redraw base.
-    // (This also runs after a stroke completes, so base becomes the source of truth.)
     React.useEffect(() => {
       baseRendererRef.current?.renderStrokes(strokes);
     }, [strokes]);
@@ -523,7 +525,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
         )}
         style={{ touchAction: "none", height: dimensions.height }}
       >
-        {/* Base canvas: committed strokes */}
         <canvas
           ref={baseCanvasRef}
           width={dimensions.width}
@@ -532,7 +533,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
           style={{ WebkitTouchCallout: "none" }}
         />
 
-        {/* Live canvas: active stroke + pointer events */}
         <canvas
           ref={liveCanvasRef}
           width={dimensions.width}
@@ -545,7 +545,6 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, SignaturePadPro
           style={{ WebkitTouchCallout: "none" }}
         />
 
-        {/* Minimal Signature Line Empty State */}
         <div className="absolute inset-0 pointer-events-none transition-opacity duration-700 z-0 flex flex-col items-center justify-center">
           <div className="absolute bottom-[30%] w-full flex items-end text-foreground/20 dark:text-foreground/20">
             <div className="flex-1 border-b-[1.5px] border-dashed border-foreground/20 dark:border-foreground/20" />

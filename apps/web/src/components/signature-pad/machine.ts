@@ -1,10 +1,29 @@
-export type Point = { x: number; y: number; pressure: number; timestamp: number };
+export type Point = {
+  x: number;
+  y: number;
+  pressure: number;
+  timestamp: number;
+};
+
+export type BrushId =
+  | "monoline"
+  | "uni-jetstream"
+  | "sharpie-fine"
+  | "sharpie-brush"
+  | "tombow-fudenosuke";
+
+export type BrushMeta = Readonly<{
+  id: BrushId;
+  version: 1;
+  settings: Record<string, unknown>;
+}>;
 
 export type Stroke = {
   id: string;
   points: Point[];
   color: string;
   width: number;
+  brush: BrushMeta;
 };
 
 export type SignatureState =

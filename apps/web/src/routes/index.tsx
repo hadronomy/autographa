@@ -6,6 +6,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { CopyIcon, DownloadIcon, EraserIcon, Redo2Icon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 
+import { BrushSwatch } from "@/components/brush-swatch";
+import type { BrushId } from "@/components/signature-pad/machine";
 import { SignaturePad, type SignaturePadHandle } from "@/components/signature-pad/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +25,18 @@ export const Route = createFileRoute("/")({
   component: HomeComponent,
 });
 
+const BRUSH_PRESETS: ReadonlyArray<{
+  id: BrushId;
+  label: string;
+  defaultWidth: number;
+}> = [
+  { id: "monoline", label: "Monoline (Classic)", defaultWidth: 2.5 },
+  { id: "uni-jetstream", label: "Uni Jetstream", defaultWidth: 2.2 },
+  { id: "sharpie-fine", label: "Sharpie Fine", defaultWidth: 3.4 },
+  { id: "sharpie-brush", label: "Sharpie Brush", defaultWidth: 6.5 },
+  // { id: "tombow-fudenosuke", label: "Tombow Fudenosuke", defaultWidth: 5.5 },
+];
+
 function HomeComponent() {
   const trpc = useTRPC();
   const healthCheck = useQuery(trpc.healthCheck.queryOptions());
@@ -34,6 +48,11 @@ function HomeComponent() {
   const [strokeCount, setStrokeCount] = React.useState(0);
 
   const [filename, setFilename] = React.useState("signature");
+
+  const [brushId, setBrushId] = React.useState<BrushId>("monoline");
+  const [strokeWidth, setStrokeWidth] = React.useState<number>(2.5);
+
+  const brushLabel = BRUSH_PRESETS.find((b) => b.id === brushId)?.label ?? "Monoline (Classic)";
 
   const apiStatus = (() => {
     if (healthCheck.isPending) return "Checking…";
@@ -153,7 +172,36 @@ function HomeComponent() {
               </div>
 
               <div className="hidden sm:flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">File</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger>
+                    <Button variant="outline" className="gap-2">
+                      <BrushSwatch brushId={brushId} className="text-foreground/80" />
+                      <span>{brushLabel}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+
+                  <DropdownMenuContent align="end" className="min-w-72">
+                    {BRUSH_PRESETS.map((b) => (
+                      <DropdownMenuItem
+                        key={b.id}
+                        onClick={() => {
+                          setBrushId(b.id);
+                          setStrokeWidth(b.defaultWidth);
+                          toast.message("Brush selected", {
+                            description: b.label,
+                          });
+                        }}
+                      >
+                        <div className="flex items-center gap-3 w-full">
+                          <BrushSwatch brushId={b.id} className="text-foreground/80 shrink-0" />
+                          <div className="flex-1">{b.label}</div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <span className="text-xs text-muted-foreground ml-2">File</span>
                 <Input
                   value={filename}
                   onChange={(e) => setFilename(e.target.value)}
@@ -170,6 +218,8 @@ function HomeComponent() {
               ref={padRef}
               showToolbar={false}
               className="rounded-none border-x-0 border-y"
+              strokeWidth={strokeWidth}
+              brush={{ id: brushId }}
               onCanUndoChange={setCanUndo}
               onCanRedoChange={setCanRedo}
               onStrokesChange={(strokes) => setStrokeCount(strokes.length)}
@@ -178,7 +228,6 @@ function HomeComponent() {
           </CardContent>
 
           <CardFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            {/* Left cluster: edit actions */}
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
@@ -220,9 +269,7 @@ function HomeComponent() {
               </div>
             </div>
 
-            {/* Right cluster: export */}
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              {/* Mobile filename input */}
               <div className="sm:hidden flex-1">
                 <Input
                   value={filename}
@@ -232,7 +279,6 @@ function HomeComponent() {
                 />
               </div>
 
-              {/* Mobile: a compact export menu */}
               <div className="sm:hidden">
                 <DropdownMenu>
                   <DropdownMenuTrigger>
@@ -261,7 +307,6 @@ function HomeComponent() {
                 </DropdownMenu>
               </div>
 
-              {/* Desktop: two explicit buttons (no dropdown) */}
               <div className="hidden sm:flex items-center gap-2">
                 <Button
                   variant="outline"
