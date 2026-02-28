@@ -357,6 +357,7 @@ export async function createOgResponse() {
       width: 1200,
       height: 630,
       format: "png",
+      quality: 100,
     },
   );
 
