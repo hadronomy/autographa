@@ -10,7 +10,7 @@ import {
   toFixed,
 } from "./brushes/geometry";
 import { getBrush } from "./brushes/registry";
-import type { Brush } from "./brushes/types";
+import type { BrushSvgRenderResult } from "./brushes/types";
 import type { BrushId, Stroke } from "./machine";
 
 export type SignatureSvgSize = Readonly<{
@@ -51,8 +51,8 @@ export type BuildSignatureSvgOptions = Readonly<{
 export type BuildSignatureSvgParams = Readonly<{
   strokes: ReadonlyArray<Stroke>;
   /**
-   * The "canvas size" (historical). Used when fitToContent=false, and as a
-   * fallback for empty exports.
+   * Historical "canvas size".
+   * Used when fitToContent=false and as a fallback for empty exports.
    */
   size: SignatureSvgSize;
   options?: BuildSignatureSvgOptions;
@@ -71,6 +71,10 @@ type Bounds = Readonly<{
   maxX: number;
   maxY: number;
 }>;
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected value: ${String(value)}`);
+}
 
 function emptyBounds(): Bounds {
   return {
@@ -110,6 +114,8 @@ function expandBounds(b: Bounds, padPx: number): Bounds {
 }
 
 function boundsFromPoints(points: ReadonlyArray<{ x: number; y: number }>): Bounds {
+  if (points.length === 0) return emptyBounds();
+
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -123,6 +129,13 @@ function boundsFromPoints(points: ReadonlyArray<{ x: number; y: number }>): Boun
   }
 
   return { minX, minY, maxX, maxY };
+}
+
+function sanitizeSize(size: SignatureSvgSize): SignatureSvgSize {
+  return {
+    width: Number.isFinite(size.width) ? Math.max(0, size.width) : 0,
+    height: Number.isFinite(size.height) ? Math.max(0, size.height) : 0,
+  };
 }
 
 function translateStroke(stroke: Stroke, dx: number, dy: number): Stroke {
@@ -141,31 +154,26 @@ function translateStroke(stroke: Stroke, dx: number, dy: number): Stroke {
 type PreparedStroke =
   | Readonly<{
       brushId: "monoline";
-      brush: Brush<MonolineSettings>;
       settings: MonolineSettings;
       stroke: Stroke;
     }>
   | Readonly<{
       brushId: "uni-jetstream";
-      brush: Brush<MonolineSettings>;
       settings: MonolineSettings;
       stroke: Stroke;
     }>
   | Readonly<{
       brushId: "sharpie-fine";
-      brush: Brush<MonolineSettings>;
       settings: MonolineSettings;
       stroke: Stroke;
     }>
   | Readonly<{
       brushId: "tombow-fudenosuke";
-      brush: Brush<TombowFudenosukeSettings>;
       settings: TombowFudenosukeSettings;
       stroke: Stroke;
     }>
   | Readonly<{
       brushId: "sharpie-brush";
-      brush: Brush<SharpieBrushSettings>;
       settings: SharpieBrushSettings;
       stroke: Stroke;
     }>;
@@ -178,43 +186,44 @@ function prepareStroke(stroke: Stroke): PreparedStroke {
       const brush = getBrush("monoline");
       const settings = brush.coerceSettings(stroke.brush.settings);
       const pre = brush.preprocess ? brush.preprocess(stroke, settings) : stroke;
-      return { brushId: "monoline", brush, settings, stroke: pre };
+      return { brushId: "monoline", settings, stroke: pre };
     }
 
     case "uni-jetstream": {
       const brush = getBrush("uni-jetstream");
       const settings = brush.coerceSettings(stroke.brush.settings);
       const pre = brush.preprocess ? brush.preprocess(stroke, settings) : stroke;
-      return { brushId: "uni-jetstream", brush, settings, stroke: pre };
+      return { brushId: "uni-jetstream", settings, stroke: pre };
     }
 
     case "sharpie-fine": {
       const brush = getBrush("sharpie-fine");
       const settings = brush.coerceSettings(stroke.brush.settings);
       const pre = brush.preprocess ? brush.preprocess(stroke, settings) : stroke;
-      return { brushId: "sharpie-fine", brush, settings, stroke: pre };
+      return { brushId: "sharpie-fine", settings, stroke: pre };
     }
 
     case "tombow-fudenosuke": {
       const brush = getBrush("tombow-fudenosuke");
       const settings = brush.coerceSettings(stroke.brush.settings);
       const pre = brush.preprocess ? brush.preprocess(stroke, settings) : stroke;
-      return { brushId: "tombow-fudenosuke", brush, settings, stroke: pre };
+      return { brushId: "tombow-fudenosuke", settings, stroke: pre };
     }
 
     case "sharpie-brush": {
       const brush = getBrush("sharpie-brush");
       const settings = brush.coerceSettings(stroke.brush.settings);
       const pre = brush.preprocess ? brush.preprocess(stroke, settings) : stroke;
-      return { brushId: "sharpie-brush", brush, settings, stroke: pre };
+      return { brushId: "sharpie-brush", settings, stroke: pre };
     }
   }
+
+  return assertNever(id);
 }
 
 /**
  * Some brushes use SVG filters (blur/glow/displacement) which can paint outside
- * the geometric stroke outline. This returns extra pad to avoid clipping when
- * fitting tightly.
+ * the geometric stroke outline. Return extra padding to avoid clipping.
  */
 function extraVisualPadPx(p: PreparedStroke): number {
   if (p.brushId !== "sharpie-brush") return 0;
@@ -222,27 +231,27 @@ function extraVisualPadPx(p: PreparedStroke): number {
   const softness = Math.max(0, Math.min(1, p.settings.edgeSoftness));
   const roughness = Math.max(0, p.settings.roughnessPx);
 
-  // Matches brush renderSvg mapping (approx).
+  // Mirror the brush renderSvg mapping (approx).
   const blur = 0.08 + softness * 0.38;
   const dropShadowStd = blur + 0.35;
 
-  // Conservative: ~3 sigma, plus displacement, plus small safety.
+  // Conservative: ~3 sigma, plus displacement, plus a small safety margin.
   return roughness + dropShadowStd * 6 + 2;
 }
 
 function strokeBounds(p: PreparedStroke): Bounds {
   const stroke = p.stroke;
-
   if (stroke.points.length === 0) return emptyBounds();
 
-  switch (p.brushId) {
+  const id = p.brushId;
+
+  switch (id) {
     case "monoline":
     case "sharpie-fine":
     case "uni-jetstream": {
-      // Centerline stroke with round caps: expand point bounds by max radius.
+      // Centerline with round caps: expand point bounds by max radius.
       const half = Math.max(0, stroke.width) / 2;
-      const b = boundsFromPoints(stroke.points);
-      return expandBounds(b, half);
+      return expandBounds(boundsFromPoints(stroke.points), half);
     }
 
     case "tombow-fudenosuke": {
@@ -261,7 +270,7 @@ function strokeBounds(p: PreparedStroke): Bounds {
     }
 
     case "sharpie-brush": {
-      // Mirror the brush's densify behavior for stable geometry bounds.
+      // Mirror densification for stable geometry bounds.
       const autoSpacing = Math.max(0.35, stroke.width * 0.075);
       const spacing = p.settings.densifySpacingPx > 0 ? p.settings.densifySpacingPx : autoSpacing;
 
@@ -278,33 +287,53 @@ function strokeBounds(p: PreparedStroke): Bounds {
       vertices.push(...poly.endCap);
       vertices.push(...poly.right.slice(1, -1).reverse());
 
-      // Outline smoothing stays within the polygon, so this is a safe bound.
       return boundsFromPoints(vertices);
     }
   }
+
+  return assertNever(id);
 }
 
-function escapeAttr(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+function computeFitTransform(args: {
+  prepared: ReadonlyArray<PreparedStroke>;
+  baseSize: SignatureSvgSize;
+  fitToContent: boolean;
+  contentPaddingPx: number;
+}): { exportSize: SignatureSvgSize; translate: { x: number; y: number } } {
+  const baseSize = sanitizeSize(args.baseSize);
+
+  if (!args.fitToContent || args.prepared.length === 0) {
+    return { exportSize: baseSize, translate: { x: 0, y: 0 } };
+  }
+
+  const padBase = Math.max(0, args.contentPaddingPx);
+
+  let content = emptyBounds();
+
+  for (const p of args.prepared) {
+    const geom = strokeBounds(p);
+    const pad = padBase + extraVisualPadPx(p);
+    content = unionBounds(content, expandBounds(geom, pad));
+  }
+
+  if (!isFiniteBounds(content)) {
+    return { exportSize: baseSize, translate: { x: 0, y: 0 } };
+  }
+
+  const exportSize: SignatureSvgSize = {
+    width: Math.ceil(Math.max(1, content.maxX - content.minX)),
+    height: Math.ceil(Math.max(1, content.maxY - content.minY)),
+  };
+
+  return {
+    exportSize,
+    translate: { x: -content.minX, y: -content.minY },
+  };
 }
 
 function svgStyle(animated: boolean): string {
   if (!animated) return "";
 
-  /**
-   * IMPORTANT:
-   * - Do NOT set stroke-dashoffset: 1 in the base class.
-   *   That makes paths invisible in viewers that don't run CSS animations
-   *   (and is especially problematic when the path lives inside a <mask>).
-   *
-   * - Instead, set dashoffset in keyframes.
-   * - Use fill-mode: both so the 0% keyframe applies during delay.
-   */
   return `
     .sig-anim-path {
       stroke-dasharray: 1;
@@ -333,53 +362,51 @@ function svgStyle(animated: boolean): string {
 
 function renderPreparedSvg(args: {
   prepared: PreparedStroke;
-  translatedStroke: Stroke;
+  stroke: Stroke;
   exportSize: SignatureSvgSize;
   precision: number;
   inkColor: string;
   animation: { enabled: boolean; delayMs: number; durationMs: number };
-}) {
-  const { prepared: p, translatedStroke, exportSize, precision, inkColor, animation } = args;
+}): BrushSvgRenderResult {
+  const { prepared: p, stroke, exportSize, precision, inkColor, animation } = args;
 
-  switch (p.brushId) {
-    case "monoline":
-    case "sharpie-fine":
-    case "uni-jetstream":
-      return p.brush.renderSvg({
-        stroke: translatedStroke,
-        settings: p.settings,
-        context: {
-          size: exportSize,
-          precision,
-          inkColor,
-          animation,
-        },
-      });
+  const context = {
+    size: exportSize,
+    precision,
+    inkColor,
+    animation,
+  } as const;
 
-    case "tombow-fudenosuke":
-      return p.brush.renderSvg({
-        stroke: translatedStroke,
-        settings: p.settings,
-        context: {
-          size: exportSize,
-          precision,
-          inkColor,
-          animation,
-        },
-      });
+  const id = p.brushId;
 
-    case "sharpie-brush":
-      return p.brush.renderSvg({
-        stroke: translatedStroke,
-        settings: p.settings,
-        context: {
-          size: exportSize,
-          precision,
-          inkColor,
-          animation,
-        },
-      });
+  switch (id) {
+    case "monoline": {
+      const brush = getBrush("monoline");
+      return brush.renderSvg({ stroke, settings: p.settings, context });
+    }
+
+    case "uni-jetstream": {
+      const brush = getBrush("uni-jetstream");
+      return brush.renderSvg({ stroke, settings: p.settings, context });
+    }
+
+    case "sharpie-fine": {
+      const brush = getBrush("sharpie-fine");
+      return brush.renderSvg({ stroke, settings: p.settings, context });
+    }
+
+    case "tombow-fudenosuke": {
+      const brush = getBrush("tombow-fudenosuke");
+      return brush.renderSvg({ stroke, settings: p.settings, context });
+    }
+
+    case "sharpie-brush": {
+      const brush = getBrush("sharpie-brush");
+      return brush.renderSvg({ stroke, settings: p.settings, context });
+    }
   }
+
+  return assertNever(id);
 }
 
 /**
@@ -405,33 +432,12 @@ export function buildSignatureSvg(params: BuildSignatureSvgParams): string {
 
   const prepared = strokes.map(prepareStroke);
 
-  let exportSize: SignatureSvgSize = {
-    width: Number.isFinite(size.width) ? Math.max(0, size.width) : 0,
-    height: Number.isFinite(size.height) ? Math.max(0, size.height) : 0,
-  };
-
-  let dx = 0;
-  let dy = 0;
-
-  if (fitToContent && prepared.length > 0) {
-    let content = emptyBounds();
-
-    for (const p of prepared) {
-      const geom = strokeBounds(p);
-      const pad = contentPaddingPx + extraVisualPadPx(p);
-      content = unionBounds(content, expandBounds(geom, pad));
-    }
-
-    if (isFiniteBounds(content)) {
-      dx = -content.minX;
-      dy = -content.minY;
-
-      exportSize = {
-        width: Math.ceil(Math.max(1, content.maxX - content.minX)),
-        height: Math.ceil(Math.max(1, content.maxY - content.minY)),
-      };
-    }
-  }
+  const { exportSize, translate } = computeFitTransform({
+    prepared,
+    baseSize: size,
+    fitToContent,
+    contentPaddingPx,
+  });
 
   let cumulativeDelayMs = 0;
 
@@ -439,9 +445,12 @@ export function buildSignatureSvg(params: BuildSignatureSvgParams): string {
   const bodies: string[] = [];
 
   for (const p of prepared) {
-    const translated = dx === 0 && dy === 0 ? p.stroke : translateStroke(p.stroke, dx, dy);
+    const translatedStroke =
+      translate.x === 0 && translate.y === 0
+        ? p.stroke
+        : translateStroke(p.stroke, translate.x, translate.y);
 
-    const approxLenPx = estimateStrokeLength(translated.points);
+    const approxLenPx = estimateStrokeLength(translatedStroke.points);
 
     const durationMs = Math.min(
       animationCfg.maxStrokeMs,
@@ -453,7 +462,7 @@ export function buildSignatureSvg(params: BuildSignatureSvgParams): string {
 
     const out = renderPreparedSvg({
       prepared: p,
-      translatedStroke: translated,
+      stroke: translatedStroke,
       exportSize,
       precision,
       inkColor,
@@ -497,12 +506,22 @@ export function buildSignatureSvg(params: BuildSignatureSvgParams): string {
   ).data;
 }
 
+function escapeAttr(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 export function buildAnimatedPathStyle(args: {
   enabled: boolean;
   delayMs: number;
   durationMs: number;
 }): string {
   if (!args.enabled) return "";
+
   return `animation-delay: ${toFixed(args.delayMs, 0)}ms; animation-duration: ${toFixed(
     args.durationMs,
     0,
