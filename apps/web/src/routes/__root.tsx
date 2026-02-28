@@ -80,6 +80,9 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "index,follow",
       },
       {
+        title: SITE_NAME,
+      },
+      {
         name: "description",
         content: ROOT_DESCRIPTION,
       },
@@ -143,6 +146,10 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
     ],
     links: [
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "icon", href: "/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { rel: "icon", href: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
       {
         rel: "stylesheet",
         href: appCss,

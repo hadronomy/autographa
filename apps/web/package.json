@@ -52,6 +52,7 @@
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/playfair-display": "^5.2.8",
     "@fontsource/inter": "^5.2.8",
+    "@resvg/resvg-js": "^2.6.2",
     "@tanstack/react-query-devtools": "^5.91.1",
     "@tanstack/react-router-devtools": "^1.141.1",
     "@testing-library/dom": "^10.4.0",
