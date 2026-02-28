@@ -83,12 +83,6 @@ function coerce(raw: Record<string, unknown>): SharpieBrushSettings {
   };
 }
 
-function resolveInkColor(args: { stroke: Stroke; contextInk: string }): string {
-  // Avoid currentColor in filter primitives (drop-shadow flood-color etc).
-  if (args.contextInk === "currentColor") return args.stroke.color || "#111111";
-  return args.contextInk;
-}
-
 function buildSmoothOutline(args: {
   stroke: Stroke;
   settings: SharpieBrushSettings;
@@ -174,8 +168,6 @@ export const sharpieBrushBrush: Brush<SharpieBrushSettings> = {
 
   renderSvg({ stroke, settings, context }) {
     if (stroke.points.length === 0) return { body: "" };
-
-    const ink = resolveInkColor({ stroke, contextInk: context.inkColor });
 
     const outline = buildSmoothOutline({
       stroke,
