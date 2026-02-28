@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { useHotkey } from "@tanstack/react-hotkeys";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { CopyIcon, DownloadIcon, EraserIcon, Redo2Icon, Undo2Icon } from "lucide-react";
@@ -110,6 +111,18 @@ function HomeComponent() {
       });
     }
   }, []);
+
+  useHotkey("Mod+Z", () => {
+    handleUndo();
+  });
+
+  useHotkey("Mod+Shift+Z", () => {
+    handleRedo();
+  });
+
+  useHotkey("Mod+Backspace", () => {
+    handleClear();
+  });
 
   return (
     <div className="flex flex-col col-start-2 border-x h-full py-6">
