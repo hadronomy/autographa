@@ -1,18 +1,33 @@
-# autographa
+<div align="center">
+  <img src="/.github/images/github-header-image.webp" alt="GitHub Header Image" width="auto" />
+  <p></p>
+  <p></p>
+  <!-- MIT License -->
+  <a href="https://github.com/hadronomy/autographa/blob/main/LICENSE">
+    <img
+      alt="Content License"
+      src="https://img.shields.io/github/license/hadronomy/autographa?style=for-the-badge&logo=starship&color=ee999f&logoColor=D9E0EE&labelColor=302D41"
+    />
+  </a>
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Self, TRPC, and more.
+  <!-- GitHub Repo Stars -->
+  <a href="https://github.com/hadronomy/autographa/stargazers">
+    <img
+      alt="Stars"
+      src="https://img.shields.io/github/stars/hadronomy/autographa?style=for-the-badge&logo=starship&color=c69ff5&logoColor=D9E0EE&labelColor=302D41"
+    />
+  </a>
+  <p></p>
+  <p align="center">
+    Create beautiful animated signatures.
+  </p>
+  <p></p>
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#license">License</a>
+  <hr />
 
-## Features
-
-- **TypeScript** - For type safety and improved developer experience
-- **TanStack Start** - SSR framework with TanStack Router
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **shadcn/ui** - Reusable UI components
-- **tRPC** - End-to-end type-safe APIs
-- **Authentication** - Better-Auth
-- **Husky** - Git hooks for code quality
-- **Oxlint** - Oxlint + Oxfmt (linting & formatting)
-- **Turborepo** - Optimized monorepo build system
+</div>
 
 ## Getting Started
 
@@ -43,7 +58,6 @@ autographa/
 │   └── web/         # Fullstack application (React + TanStack Start)
 ├── packages/
 │   ├── api/         # API layer / business logic
-│   ├── auth/        # Authentication configuration & logic
 ```
 
 ## Available Scripts
@@ -52,3 +66,7 @@ autographa/
 - `bun run build`: Build all applications
 - `bun run check-types`: Check TypeScript types across all apps
 - `bun run check`: Run Oxlint and Oxfmt
+
+## License
+
+MIT
