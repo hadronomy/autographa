@@ -11,7 +11,6 @@ import {
   Redo2Icon,
   Undo2Icon,
 } from "lucide-react";
-import { toast } from "sonner";
 
 import { BrushSwatch } from "@/components/brush-swatch";
 import type { BrushId } from "@/components/signature-pad/machine";
@@ -27,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/utils/trpc";
+import { sileo } from "sileo";
 
 export const Route = createFileRoute("/")({
   component: HomeComponent,
@@ -143,9 +143,7 @@ function HomeComponent() {
   const handleClear = React.useCallback(() => {
     if (isEmpty) return;
     padRef.current?.clear();
-    toast.message("Cleared", {
-      description: "Your canvas is ready for a fresh signature.",
-    });
+    sileo.info({ title: "Cleared", description: "Your canvas is ready for a fresh signature." });
   }, [isEmpty]);
 
   const handleDownload = React.useCallback(() => {
@@ -153,14 +151,16 @@ function HomeComponent() {
     if (!pad) return;
 
     if (pad.getStrokes().length === 0) {
-      toast.error("Nothing to export", {
+      sileo.error({
+        title: "Nothing to export",
         description: "Add at least one stroke before exporting.",
       });
       return;
     }
 
     pad.downloadSVG({ filename: `${safeFilename}.svg` });
-    toast.success("Downloaded", {
+    sileo.success({
+      title: "Downloaded",
       description: `${safeFilename}.svg`,
     });
   }, [safeFilename]);
@@ -170,7 +170,8 @@ function HomeComponent() {
     if (!pad) return;
 
     if (pad.getStrokes().length === 0) {
-      toast.error("Nothing to copy", {
+      sileo.error({
+        title: "Nothing to copy",
         description: "Add at least one stroke before copying.",
       });
       return;
@@ -180,11 +181,13 @@ function HomeComponent() {
 
     try {
       await navigator.clipboard.writeText(svg);
-      toast.success("Copied SVG", {
+      sileo.success({
+        title: "Copied SVG",
         description: "You can paste it into an editor or upload field.",
       });
     } catch {
-      toast.error("Could not copy", {
+      sileo.error({
+        title: "Could not copy",
         description: "Clipboard permission was denied by the browser.",
       });
     }
@@ -266,7 +269,8 @@ function HomeComponent() {
                   onClick={() => {
                     setBrushId(b.id);
                     setStrokeWidth(b.defaultWidth);
-                    toast.message("Brush selected", {
+                    sileo.info({
+                      title: "Brush selected",
                       description: b.label,
                     });
                   }}

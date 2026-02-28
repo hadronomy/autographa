@@ -8,7 +8,7 @@ import { ReactQueryDevtoolsPanel } from "@tanstack/react-query-devtools";
 import { HeadContent, Outlet, Scripts, createRootRouteWithContext } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "sileo";
 
 import appCss from "../index.css?url";
 export interface RouterAppContext {
@@ -51,7 +51,7 @@ function RootDocument() {
         <div className="grid h-svh grid-cols-[1fr_minmax(auto,48rem)_1fr]">
           <Outlet />
         </div>
-        <Toaster richColors />
+        <Toaster position="top-right" options={{ duration: 1200 }} />
         <TanStackDevtools
           plugins={[
             {
