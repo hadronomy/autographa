@@ -23,8 +23,52 @@ const ROOT_DESCRIPTION = "Create beautiful handwritten signatures";
 const BASE_URL = env.VITE_APP_URL;
 const OG_IMAGE_URL = "/api/og/autographa";
 
+function getJsonLd() {
+  const siteUrl = new URL("/", BASE_URL).toString();
+  const ogImageUrl = new URL(OG_IMAGE_URL, BASE_URL).toString();
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": `${siteUrl}#organization`,
+        name: "autographa",
+        url: siteUrl,
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${siteUrl}#website`,
+        url: siteUrl,
+        name: "autographa",
+        description: ROOT_DESCRIPTION,
+        inLanguage: "en",
+        publisher: { "@id": `${siteUrl}#organization` },
+      },
+      {
+        "@type": "WebApplication",
+        "@id": `${siteUrl}#app`,
+        name: "autographa",
+        url: siteUrl,
+        description: ROOT_DESCRIPTION,
+        applicationCategory: "DesignApplication",
+        operatingSystem: "Web",
+        isAccessibleForFree: true,
+        image: ogImageUrl,
+        featureList: [
+          "Draw a signature with brush presets",
+          "Undo, redo, and clear",
+          "Export as SVG",
+          "Copy SVG to clipboard",
+        ],
+      },
+    ],
+  };
+}
+
 export const Route = createRootRouteWithContext<RouterAppContext>()({
   head: () => ({
+    title: SITE_NAME,
     meta: [
       { charSet: "utf-8" },
       {
@@ -32,7 +76,8 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: SITE_NAME,
+        name: "robots",
+        content: "index,follow",
       },
       {
         name: "description",
@@ -68,7 +113,7 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
       {
         property: "og:image",
-        content: OG_IMAGE_URL,
+        content: new URL(OG_IMAGE_URL, BASE_URL).toString(),
       },
       {
         name: "twitter:card",
@@ -88,13 +133,23 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
       },
       {
         name: "twitter:image",
-        content: OG_IMAGE_URL,
+        content: new URL(OG_IMAGE_URL, BASE_URL).toString(),
+      },
+    ],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify(getJsonLd()),
       },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+      {
+        rel: "canonical",
+        href: BASE_URL,
       },
     ],
   }),

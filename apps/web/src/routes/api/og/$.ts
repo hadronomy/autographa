@@ -6,7 +6,9 @@ export const Route = createFileRoute("/api/og/$")({
   server: {
     handlers: {
       GET: async () => {
-        return createOgResponse();
+        const res = await createOgResponse();
+        res.headers.set("X-Robots-Tag", "noindex");
+        return res;
       },
     },
   },
