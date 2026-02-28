@@ -21,7 +21,7 @@ export interface RouterAppContext {
 const SITE_NAME = "autographa | animated signatures";
 const ROOT_DESCRIPTION = "Create beautiful handwritten signatures";
 const BASE_URL = env.VITE_APP_URL;
-const OG_IMAGE_URL = "/api/og/autographa";
+const OG_IMAGE_URL = "/api/og/autographa.png";
 
 function getJsonLd() {
   const siteUrl = new URL("/", BASE_URL).toString();
